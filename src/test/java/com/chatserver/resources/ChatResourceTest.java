@@ -1,99 +1,171 @@
 package com.chatserver.resources;
 
+
+import com.chatserver.core.ChatDomain;
 import com.chatserver.core.ChatMessage;
+import com.chatserver.core.Constants;
 import com.chatserver.core.ServerResponse;
+import com.sun.jersey.api.client.ClientResponse;
+import com.yammer.dropwizard.testing.ResourceTest;
 import org.junit.Test;
 
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+
 import java.util.LinkedList;
+import java.util.List;
 
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.TestCase.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.*;
 
-public class ChatResourceTest {
-    @Test
-    public void testReturnMessagesWithNoMessages() throws Exception {
-        ChatResource chatResource = new ChatResource();
+public class ChatResourceTest extends ResourceTest {
+    private ChatResource chatResource = new ChatResource();
+    private ChatDomain mockedChatDomain = mock(ChatDomain.class);
 
-        ServerResponse serverResponse = chatResource.returnMessages(0);
-
-        assertTrue(serverResponse.getMessages().isEmpty());
-        assertEquals(0, serverResponse.getNextSeq());
+    @Override
+    protected void setUpResources() {
+        chatResource.setChatDomain(mockedChatDomain);
+        addResource(chatResource);
     }
 
     @Test
     public void testReturnOneMessage() throws Exception {
-        ChatResource chatResource = new ChatResource();
+        reset(mockedChatDomain);
 
+        int nextSeq = 0;
+        int expectedNextSeq = 1;
         ChatMessage chatMessage = new ChatMessage("User1", "jsdlafjk");
-        chatResource.getChatMessages().add(chatMessage);
+        List<ChatMessage> messagesReturned = new LinkedList<>();
+        messagesReturned.add(chatMessage);
 
-        ServerResponse serverResponse = chatResource.returnMessages(0);
+        ServerResponse expectedServerResponse = new ServerResponse(expectedNextSeq, messagesReturned);
 
-        assertEquals(1, serverResponse.getMessages().size());
-        assertEquals(1, serverResponse.getNextSeq());
+        when(mockedChatDomain.returnMessages(nextSeq)).thenReturn(expectedServerResponse);
+
+        ServerResponse serverResponse = client()
+                .resource(Constants.PATH)
+                .queryParam("next_seq", Integer.toString(nextSeq))
+                .type(MediaType.APPLICATION_JSON)
+                .get(ServerResponse.class);
+
+        verify(mockedChatDomain).returnMessages(nextSeq);
+        assertEquals(expectedServerResponse, serverResponse);
     }
 
     @Test
     public void testReturnDifficultMessage() throws Exception {
-        ChatResource chatResource = new ChatResource();
+        reset(mockedChatDomain);
 
+        int nextSeq = 0;
+        int expectedNextSeq = 1;
         ChatMessage difficultMessage = new ChatMessage("UserZ", "áéíóúÁÉÍÓÚñÑçÇ");
-        chatResource.getChatMessages().add(difficultMessage);
+        List<ChatMessage> messagesReturned = new LinkedList<>();
+        messagesReturned.add(difficultMessage);
 
-        ServerResponse serverResponse = chatResource.returnMessages(0);
+        ServerResponse expectedServerResponse = new ServerResponse(expectedNextSeq, messagesReturned);
 
-        assertEquals(difficultMessage, serverResponse.getMessages().get(0));
+        when(mockedChatDomain.returnMessages(nextSeq)).thenReturn(expectedServerResponse);
+
+        ServerResponse serverResponse = client()
+                .resource(Constants.PATH)
+                .queryParam("next_seq", Integer.toString(nextSeq))
+                .type(MediaType.APPLICATION_JSON)
+                .get(ServerResponse.class);
+
+        verify(mockedChatDomain).returnMessages(nextSeq);
+        assertEquals(expectedServerResponse, serverResponse);
     }
 
     @Test
     public void testReturnFromThirdMessage() throws Exception {
-        ChatResource chatResource = new ChatResource();
+        reset(mockedChatDomain);
 
-        LinkedList<ChatMessage> chatMessages = new LinkedList<>();
-        chatMessages.add(new ChatMessage("User1", "jsdlafjk"));
-        chatMessages.add(new ChatMessage("User1", "bjsdsflasdffjk"));
-        chatMessages.add(new ChatMessage("User2", "xbjsdsflasdffjsafk"));
+        int nextSeq = 2;
+        int expectedNextSeq = 3;
+        LinkedList<ChatMessage> messagesReturned = new LinkedList<>();
+        messagesReturned.add(new ChatMessage("User2", "xbjsdsflasdffjsafk"));
 
-        chatResource.getChatMessages().addAll(chatMessages);
+        ServerResponse expectedServerResponse = new ServerResponse(expectedNextSeq, messagesReturned);
 
-        ServerResponse serverResponse = chatResource.returnMessages(2);
+        when(mockedChatDomain.returnMessages(nextSeq)).thenReturn(expectedServerResponse);
 
-        assertEquals(1, serverResponse.getMessages().size());
-        assertEquals(3, serverResponse.getNextSeq());
+        ServerResponse serverResponse = client()
+                .resource(Constants.PATH)
+                .queryParam("next_seq", Integer.toString(nextSeq))
+                .type(MediaType.APPLICATION_JSON)
+                .get(ServerResponse.class);
+
+        verify(mockedChatDomain).returnMessages(nextSeq);
+        assertEquals(expectedServerResponse, serverResponse);
+    }
+
+    @Test
+    public void testReturnWhenLastSeqGreaterThanMessagesSize() throws Exception {
+        reset(mockedChatDomain);
+
+        int nextSeq = 7;
+        int expectedNextSeq = 0;
+        LinkedList<ChatMessage> messagesReturned = new LinkedList<>();
+
+        ServerResponse expectedServerResponse = new ServerResponse(expectedNextSeq, messagesReturned);
+
+        when(mockedChatDomain.returnMessages(nextSeq)).thenReturn(expectedServerResponse);
+
+        ServerResponse serverResponse = client()
+                .resource(Constants.PATH)
+                .queryParam("next_seq", Integer.toString(nextSeq))
+                .type(MediaType.APPLICATION_JSON)
+                .get(ServerResponse.class);
+
+        verify(mockedChatDomain).returnMessages(nextSeq);
+        assertEquals(expectedServerResponse, serverResponse);
     }
 
     @Test
     public void testAddOneMessage() throws Exception {
-        ChatResource chatResource = new ChatResource();
-        ChatMessage chatMessage = new ChatMessage("User1", "kjsdfl");
+        reset(mockedChatDomain);
 
-        Response response = chatResource.addMessage(chatMessage);
+        ChatMessage messageToSend = new ChatMessage("User2", "xbjsdsflasdffjsafk");
+        when(mockedChatDomain.addMessage(any(ChatMessage.class))).thenReturn(Response.ok().build());
 
-        assertEquals(1, chatResource.getChatMessages().size());
-        assertEquals(chatMessage, chatResource.getChatMessages().get(0));
-        assertEquals(200, response.getStatus());
+        ClientResponse response = client()
+                .resource(Constants.PATH)
+                .type(MediaType.APPLICATION_JSON)
+                .post(ClientResponse.class, messageToSend);
+
+        verify(mockedChatDomain, times(1)).addMessage(any(ChatMessage.class));
+        assertEquals(Response.ok().build().getStatus(), response.getStatus());
     }
 
     @Test
     public void testAddDifficultMessage() throws Exception {
-        ChatResource chatResource = new ChatResource();
+        reset(mockedChatDomain);
+
         ChatMessage difficultMessage = new ChatMessage("UserZ", "áéíóúÁÉÍÓÚñÑçÇ");
+        when(mockedChatDomain.addMessage(difficultMessage)).thenReturn(Response.ok().build());
 
-        Response response = chatResource.addMessage(difficultMessage);
+        ClientResponse response = client()
+                .resource(Constants.PATH)
+                .type(MediaType.APPLICATION_JSON)
+                .post(ClientResponse.class, difficultMessage);
 
-        assertEquals(1, chatResource.getChatMessages().size());
-        assertEquals(difficultMessage, chatResource.getChatMessages().get(0));
-        assertEquals(200, response.getStatus());
+        verify(mockedChatDomain, times(1)).addMessage(difficultMessage);
+        assertEquals(Response.ok().build().getStatus(), response.getStatus());
     }
 
     @Test
     public void testAddBadMessage() throws Exception {
-        ChatResource chatResource = new ChatResource();
+        reset(mockedChatDomain);
 
-        Response response = chatResource.addMessage(null);
+        when(mockedChatDomain.addMessage(null))
+                .thenReturn(Response.status(Response.Status.BAD_REQUEST).build());
 
-        assertTrue(chatResource.getChatMessages().isEmpty());
-        assertEquals(500, response.getStatus());
+        ClientResponse response = client()
+                .resource(Constants.PATH)
+                .type(MediaType.APPLICATION_JSON)
+                .post(ClientResponse.class, null);
+
+        verify(mockedChatDomain, times(1)).addMessage(any(ChatMessage.class));
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
     }
 }
